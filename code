@@ -1,0 +1,185 @@
+import pygame
+import random
+from pygame.locals import *
+
+class Game:
+    def __init__(self) -> None:
+        pygame.init()
+        self.screen_size = pygame.math.Vector2(800, 600)  # Adjusted screen size for clarity
+        self.screen = pygame.display.set_mode(self.screen_size)
+        pygame.display.set_caption('Snake')
+        self.clock = pygame.time.Clock()
+        self.event_map = set()
+        self.end_game = False  # Flag to end the game
+
+    def update_event_map(self):
+        self.event_map.clear()
+        for event in pygame.event.get():
+            if event.type == QUIT:
+                self.event_map.add(QUIT)
+            elif event.type == KEYDOWN:
+                if event.key == K_UP:
+                    self.event_map.add(K_UP)
+                elif event.key == K_DOWN:
+                    self.event_map.add(K_DOWN)
+                elif event.key == K_LEFT:
+                    self.event_map.add(K_LEFT)
+                elif event.key == K_RIGHT:
+                    self.event_map.add(K_RIGHT)
+                elif event.key == K_z:  # Added for ending the game with Z key
+                    self.end_game = True
+
+    def run(self):
+        cell_size = 20  # Decreased size of snake and food
+        apple = Apple(self, '#ff9922', cell_size)
+        snake = Snake(self, apple, cell_size)
+        game_over = False
+
+        while not game_over and not self.end_game:  # Check end_game flag
+            self.update_event_map()
+            if QUIT in self.event_map:
+                break
+            self.clock.tick(10)
+
+            self.screen.fill("#111111")
+
+            apple.draw()
+
+            snake.update()
+            snake.draw()
+
+            # Update points and display
+            points = snake.points
+            self.show_points(points)
+
+            # Check if snake bites its own tail
+            if snake.bites_own_tail():
+                game_over = True
+
+            pygame.display.flip()
+
+        self.flash_game_over()
+        pygame.time.delay(2000)  # Delay for 2 seconds before quitting
+        pygame.quit()
+
+    def show_points(self, points):
+        font = pygame.font.SysFont(None, 30)
+        text = font.render(f'Points: {points}', True, pygame.Color('white'))
+        self.screen.blit(text, (10, 10))
+
+    def flash_game_over(self):
+        font = pygame.font.SysFont(None, 50)
+        game_over_text = font.render('Game Over', True, pygame.Color('red'))
+
+        # Flashing "Game Over" text
+        show_game_over = True
+        flash_timer = pygame.time.get_ticks()
+        while pygame.time.get_ticks() - flash_timer < 2000:  # Flash for 2 seconds
+            if show_game_over:
+                self.screen.blit(game_over_text, (self.screen_size.x // 2 - 100, self.screen_size.y // 2 - 25))
+            pygame.display.flip()
+            pygame.time.delay(200)  # Delay between flashes
+            show_game_over = not show_game_over
+
+    def reset_game(self):
+        self.run()
+
+class Segment(pygame.Rect):
+    def __init__(self, x, y, color, size) -> None:
+        super().__init__(x, y, size, size)
+        self.color = color
+
+    def draw(self, surf):
+        pygame.draw.rect(surf, self.color, self)
+
+class Snake:
+    def __init__(self, game: Game, apple: 'Apple', size) -> None:
+        self.game = game
+        self.apple = apple
+        self.size = size
+        self.head = Segment(self.game.screen_size.x // 2,
+                            self.game.screen_size.y // 2,
+                            '#00ff66',
+                            self.size)
+        self.segments: list[Segment] = [self.head]
+
+        self.dx = 1
+        self.dy = 0
+        self.points = 0
+        self.initial_length = 0  # Initial length of the snake
+        for _ in range(self.initial_length):
+            self.increase()
+
+    def increase(self) -> None:
+        self.points += 1
+        self.segments.append(Segment(self.segments[-1].x - self.size * self.dx,
+                                     self.segments[-1].y - self.size * self.dy,
+                                     'red',
+                                     self.size))
+
+    def draw(self) -> None:
+        for segment in self.segments:
+            segment.draw(self.game.screen)
+
+    def move(self) -> None:
+        for i in range(len(self.segments) - 1, 0, -1):
+            self.segments[i].x = self.segments[i-1].x
+            self.segments[i].y = self.segments[i-1].y
+        self.segments[0].x = (self.segments[0].x + self.size * self.dx) % self.game.screen_size.x
+        self.segments[0].y = (self.segments[0].y + self.size * self.dy) % self.game.screen_size.y
+
+    def change_dir(self) -> None:
+        if K_UP in self.game.event_map and self.dy != 1:
+            self.dy = -1
+            self.dx = 0
+        elif K_DOWN in self.game.event_map and self.dy != -1:
+            self.dy = 1
+            self.dx = 0
+        elif K_RIGHT in self.game.event_map and self.dx != -1:
+            self.dy = 0
+            self.dx = 1
+        elif K_LEFT in self.game.event_map and self.dx != 1:
+            self.dy = 0
+            self.dx = -1
+
+    def check_collision(self) -> None:
+        if self.head.colliderect(self.apple):
+            self.increase()
+            self.apple.new_pos(self.segments)
+            return True
+        return False
+
+    def bites_own_tail(self) -> bool:
+        for i in range(1, len(self.segments)):
+            if self.head.colliderect(self.segments[i]):
+                return True
+        return False
+
+    def update(self) -> None:
+        if not self.check_collision():
+            self.move()
+        self.change_dir()
+
+class Apple(pygame.Rect):
+    def __init__(self, game: Game, color, size) -> None:
+        self.game = game
+        self.color = color
+        super().__init__(random.randint(0, int(self.game.screen_size.x - size) // size) * size,
+                         random.randint(0, int(self.game.screen_size.y - size) // size) * size,
+                         size, size)
+        
+    def draw(self) -> None:
+        pygame.draw.circle(self.game.screen,
+                           self.color,
+                           self.center,
+                           self.width // 2)
+        
+    def new_pos(self, segments) -> None:
+        while True:
+            self.x = random.randint(0, int(self.game.screen_size.x - self.width) // self.width) * self.width
+            self.y = random.randint(0, int(self.game.screen_size.y - self.width) // self.width) * self.width
+            if self.collidelist(segments) == -1:
+                break
+
+if __name__ == '__main__':
+    Game().run()
